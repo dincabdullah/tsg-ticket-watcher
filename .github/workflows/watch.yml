@@ -1,0 +1,58 @@
+name: TSG bilet nöbetçisi
+
+on:
+  schedule:
+    # GitHub'ın izin verdiği en sık aralık 5 dakika.
+    # (Yoğun saatlerde birkaç dakika gecikebilir, bu normaldir.)
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Telegram test mesajı gönder"
+        type: boolean
+        default: false
+
+# state.json'u repoya geri yazabilmek için
+permissions:
+  contents: write
+
+# Aynı anda iki kontrol çalışmasın
+concurrency:
+  group: tsg-ticket-watcher
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet requests
+
+      - name: Biletleri kontrol et
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # TSG Hoffenheim - Borussia Dortmund, 05.09.2026
+          PERFORMANCE_ID: "3188"
+          WATCH_BLOCKS: "B,C,D,E,F,G1,G2,H1,H2,I,O,Q,R,S1,S2,T,U,V"
+        run: python check_tickets.py ${{ inputs.test == true && '--test' || '' }}
+
+      - name: Durumu kaydet
+        if: ${{ inputs.test != true }}
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name  "tsg-ticket-watcher"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "durum güncellendi [skip ci]"
+            git push
+          else
+            echo "Değişiklik yok."
+          fi

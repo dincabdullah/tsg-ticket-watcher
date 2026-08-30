@@ -1,7 +1,7 @@
 # TSG Hoffenheim bilet nöbetçisi
 
-TSG Hoffenheim ticket shop'unda **C, D, E, F** bloklarından bilet çıktığı anda
-Telegram'dan mesaj atar. GitHub Actions üzerinde 5 dakikada bir çalışır,
+TSG Hoffenheim ticket shop'unda kale arkası / ev sahibi tarafındaki tükenmiş
+bloklardan bilet çıktığı anda Telegram'dan mesaj atar. GitHub Actions üzerinde 10 dakikada bir çalışır,
 sunucuya gerek yoktur.
 
 Şu an izlenen maç: **TSG Hoffenheim – Borussia Dortmund, 05.09.2026** (performance ID `3188`).
@@ -21,7 +21,7 @@ Shop'un kendi arka uç JSON'unu okur — sayfa kazıma (scraping) veya tarayıc�
    → her blok için `sitze_frei` (boş koltuk) döner
 
 Her kontrolde son durum `state.json`'a yazılır. Mesaj **yalnızca bir blok
-0'dan >0'a geçtiğinde** gider — yani bilet açık kaldığı sürece 5 dakikada bir
+0'dan >0'a geçtiğinde** gider — yani bilet açık kaldığı sürece her turda
 spam gelmez. Blok tekrar 0'a düşüp sonra yeniden açılırsa yeni mesaj gelir.
 
 ---
@@ -46,10 +46,32 @@ spam gelmez. Blok tekrar 0'a düşüp sonra yeniden açılırsa yeni mesaj gelir
 
 ### 3. Repoyu oluştur
 
-Bu klasörü GitHub'a yükle. **Repoyu `Public` yap** — public repolarda GitHub
-Actions dakikaları ücretsizdir; private repoda 5 dakikada bir çalışan bir iş
-aylık ücretsiz kotayı ilk günlerde bitirir. Token'lar kodda değil GitHub
-Secrets'ta duracağı için public olması sorun değil.
+Repo **private** olacak. Kota hesabı önemli, kısaca:
+
+GitHub Free planda private repolar için ayda **2.000 Actions dakikası** var ve
+her çalışma en az 1 dakika sayılır. 10 dakikalık aralık = günde 144 çalışma
+≈ **144 dakika/gün**. Tek maç için (05.09.2026'ya kadar ~6 gün) toplam
+~900 dakika → ücretsiz kotanın içinde, rahat. Ama bunu **ay boyunca sürekli
+açık bırakırsan kota biter** (~14 günde). Maçtan sonra iş akışını durdur
+(Actions → ⋯ → Disable workflow) veya repoyu public yap; public repolarda
+Actions dakikaları sınırsızdır.
+
+**gh CLI ile (en kolay — repoyu da secret'ları da tek seferde kurar):**
+
+```bash
+cd tsg-ticket-watcher
+git init -b main
+git add .
+git commit -m "TSG bilet nöbetçisi"
+
+gh repo create tsg-ticket-watcher --private --source=. --remote=origin --push
+
+gh secret set TELEGRAM_BOT_TOKEN     # sorunca token'ı yapıştır
+gh secret set TELEGRAM_CHAT_ID       # sorunca chat_id'yi yapıştır
+```
+
+**gh yoksa, elle:** github.com → New repository → adı `tsg-ticket-watcher`,
+görünürlük **Private**, README/gitignore ekleme → Create. Sonra:
 
 ```bash
 cd tsg-ticket-watcher
@@ -62,7 +84,8 @@ git push -u origin main
 
 ### 4. Secrets'ları gir
 
-Repoda **Settings → Secrets and variables → Actions → New repository secret**:
+`gh secret set` kullandıysan bu adım bitti. Elle yaptıysan repoda
+**Settings → Secrets and variables → Actions → New repository secret**:
 
 | İsim | Değer |
 |---|---|
@@ -87,29 +110,93 @@ Repoda **Settings → Secrets and variables → Actions → New repository secre
 
 `.github/workflows/watch.yml` içindeki `env` bloğundan:
 
-- `WATCH_BLOCKS` — izlenecek bloklar, virgülle: `"C,D,E,F"`.
-  Tüm blok adları: A, B, C, D, E, F, G1, G2, H1, H2, I, J, K, L, M, N, O, P,
-  Q, R, S1, S2, T, U, V, W, 101–104, 201–223, 301–322.
+- `WATCH_BLOCKS` — izlenecek bloklar, virgülle. Varsayılan:
+  `"B,C,D,E,F,G1,G2,H1,H2,I,O,Q,R,S1,S2,T,U,V"` — yani 30.08.2026 itibarıyla
+  **tükenmiş olan tüm ev sahibi blokları**. Mantık:
+  - **O, P, Q, R, S1, S2, T, U, V** = kale arkası / ev sahibi tarafı. Bunu
+    shop'un kendi uyarısından biliyoruz: *"Zutritt in die Blöcke O, P, Q, R,
+    S1, S2, T, U und V mit Gästefankleidung nicht gestattet"* (bu bloklara
+    deplasman forması ile giriş yok).
+  - **A** ve **W** listede yok — deplasman bölgesi (şu an yer var).
+  - **J, K, L, M, N, P** listede yok — zaten bilet satışta, beklemeye gerek yok.
+    Sadece maça girmek istiyorsan bunları şimdi alabilirsin.
+  - **101–104 / 201–223 / 301–322** listede yok — bunlar loca, pahalı.
+
+  Tüm blokları fiyat ve doluluk ile görmek için: `python list_blocks.py`
+  Çıktının sonunda kopyalayıp yapıştırabileceğin hazır bir `WATCH_BLOCKS`
+  satırı var.
 - `PERFORMANCE_ID` — maç kimliği. Başka bir maça geçmek için
   `https://tickets.tsg-hoffenheim.de/shop?shopid=104&wes=empty_session_104&language=1&nextstate=2&lpShortcutId=46`
   adresini aç, maçın **Tickets** bağlantısına tıkla, açılan sayfanın
   kaynağında `data-performanceid="...."` değerini al.
-- Kontrol sıklığı — `cron: "*/5 * * * *"`. GitHub'ın alt sınırı 5 dakikadır ve
-  yoğun saatlerde birkaç dakika gecikebilir; daha hızlısı için script'i kendi
-  bilgisayarında veya bir VPS'te 30–60 saniyede bir çalıştırman gerekir.
+- Kontrol sıklığı — `cron: "*/10 * * * *"`. GitHub'ın alt sınırı 5 dakikadır
+  (`*/5`), yoğun saatlerde birkaç dakika gecikebilir; daha hızlısı için
+  script'i kendi bilgisayarında veya bir VPS'te 30–60 saniyede bir çalıştırman
+  gerekir. Private repoda aralığı düşürmek kotayı da hızlandırır (bkz. 3. adım).
+
+## Anahtarlar nereye giriyor?
+
+İki ayrı yer var, karıştırma:
+
+| Nerede çalışıyor | Anahtarlar nereden geliyor |
+|---|---|
+| **GitHub Actions** (asıl kullanım) | Repo **Secrets**. `.env` dosyası yok ve olmamalı. |
+| **Kendi bilgisayarın** (deneme) | Klasördeki `.env` dosyası (veya `export`). |
+
+GitHub tarafında `.env` kullanmıyoruz çünkü repoya konan her dosya repoda
+kalır — token'ı oraya yazmak onu commit geçmişine gömmek demek. Bunun yerine
+GitHub'ın şifreli Secrets deposuna koyuyoruz; workflow çalışırken
+`${{ secrets.TELEGRAM_BOT_TOKEN }}` satırı onu ortam değişkeni olarak enjekte
+ediyor, log'larda da otomatik olarak `***` diye maskeleniyor.
 
 ## Yerelde çalıştırma
 
 ```bash
 pip install requests
-export TELEGRAM_BOT_TOKEN="..."
-export TELEGRAM_CHAT_ID="..."
+cp .env.example .env       # sonra .env'i açıp kendi değerlerini yaz
 python check_tickets.py --dry-run   # mesaj atmadan durumu göster
 python check_tickets.py --test      # sadece Telegram'ı test et
 python check_tickets.py             # normal kontrol
+python list_blocks.py               # tüm blokları fiyatıyla listele
 ```
 
+`.env` `.gitignore`'da olduğu için GitHub'a gitmez. İstersen `.env` yerine
+`export TELEGRAM_BOT_TOKEN="..."` da kullanabilirsin.
+
+## Mac'te yerel nöbetçi (daha güvenilir, daha hızlı)
+
+GitHub'ın cron'u tembel: yeni repolarda ilk zamanlanmış çalışma saatler
+sonra başlayabiliyor, `*/10` gibi tam dakikalar zamanlayıcının en yoğun
+anlarına denk geldiği için çalışmalar geciktiriliyor ya da tamamen atlanıyor.
+İade bilet saniyeler içinde gidiyorsa bu iyi değil.
+
+Aynı script'i Mac'inde 2 dakikada bir çalıştırmak için:
+
+```bash
+cp .env.example .env      # token ve chat_id'yi doldur
+bash local/install.sh     # ya da: bash local/install.sh 60
+```
+
+Kurulum bir sanal ortam açar, `launchd` görevi yazar ve hemen başlatır.
+
+```bash
+tail -f ~/Library/Logs/tsg-ticket-watcher.log   # canlı log
+bash local/uninstall.sh                          # kaldır
+```
+
+Mac uykuya geçerse kontrol durur, uyanınca devam eder; sürekli açık tutmak
+için ayrı bir terminalde `caffeinate -i` çalıştır.
+
+**İkisini birden açık bırakırsan** aynı bilet için iki mesaj gelebilir
+(durum dosyaları ayrı). Yerel kurulum çalışmaya başladıktan sonra GitHub
+tarafını kapatmak en temizi: Actions → sağdaki ⋯ → Disable workflow.
+
 ## Bilinmesi gerekenler
+
+- **Bekleme odası:** shop yoğun olduğunda SAP'ın sanal bekleme odasına
+  (`waitingroom.ticketing.cloud.sap`) yönlendiriyor. Script bunu tanır, o turu
+  sessizce atlar, durumu bozmaz ve bir sonraki çalışmada tekrar dener. Log'da
+  *"Shop yogun -- SAP bekleme odasina yonlendirildik"* yazar; bu hata değildir.
 
 - GitHub, **60 gün commit gelmeyen** repolarda zamanlanmış iş akışlarını
   otomatik durdurur. Bu script durum değiştikçe `state.json`'u commit'lediği

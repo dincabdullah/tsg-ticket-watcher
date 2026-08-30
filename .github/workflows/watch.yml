@@ -2,9 +2,11 @@ name: TSG bilet nöbetçisi
 
 on:
   schedule:
-    # GitHub'ın izin verdiği en sık aralık 5 dakika.
-    # (Yoğun saatlerde birkaç dakika gecikebilir, bu normaldir.)
-    - cron: "*/5 * * * *"
+    # Her 10 dakikada bir, ama BİLEREK tek dakikalarda (:03, :13, :23 ...).
+    # "*/10" tam :00/:10/:20'ye denk gelir; GitHub'ın zamanlayıcısı o anlarda
+    # en yoğun olduğu için çalışmalar gecikir veya tamamen atlanır.
+    # Private repoda her çalışma 1 dakika kotadan düşer: ~144 dk/gün.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       test:
@@ -41,6 +43,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # TSG Hoffenheim - Borussia Dortmund, 05.09.2026
           PERFORMANCE_ID: "3188"
+          # Kale arkası / ev sahibi tarafı + şu an tükenmiş tüm bloklar.
+          # Tam liste için: python list_blocks.py
           WATCH_BLOCKS: "B,C,D,E,F,G1,G2,H1,H2,I,O,Q,R,S1,S2,T,U,V"
         run: python check_tickets.py ${{ inputs.test == true && '--test' || '' }}
 
